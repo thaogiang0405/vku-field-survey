@@ -1,0 +1,31 @@
+{
+  "name": "vku-field-survey",
+  "version": "1.0.0",
+  "description": "VKU Field Survey - Offline Data Collection PWA with Capacitor",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
+    "server": "node server.cjs",
+    "dev:all": "concurrently \"npm run dev\" \"npm run server\""
+  },
+  "dependencies": {
+    "@capacitor/app": "^5.0.7",
+    "@capacitor/camera": "^5.0.8",
+    "@capacitor/core": "^5.7.0",
+    "@capacitor/geolocation": "^5.0.7",
+    "@capacitor/network": "^5.0.7",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^5.7.0",
+    "@types/node": "^20.10.0",
+    "terser": "^5.51.2",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8"
+  }
+}

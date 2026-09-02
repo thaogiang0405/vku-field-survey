@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Capacitor / Native build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+ios/Pods/
+ios/build/
+
+# Native builds
+*.apk
+*.aab
+*.ipa
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Misc
+.cache/
