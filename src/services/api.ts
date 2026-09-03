@@ -1,13 +1,12 @@
 import { Inspection } from '../types/inspection';
-
-const configuredUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '');
-const API_BASE_URL = configuredUrl ? `${configuredUrl}/api` : '/api';
+import { API_BASE_URL, API_CONFIGURATION_ERROR } from '../config/api';
 
 export interface ApiResponse<T> { success: boolean; data?: T; error?: string; message?: string; }
 
 async function request<T>(path: string, options: RequestInit): Promise<ApiResponse<T>> {
+  if (API_CONFIGURATION_ERROR) return { success: false, error: API_CONFIGURATION_ERROR };
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
+    const response = await fetch(`${API_BASE_URL}/api${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) return { success: false, error: body.error || body.message || `HTTP ${response.status}` };
     return { success: true, data: body.data ?? body, message: body.message };

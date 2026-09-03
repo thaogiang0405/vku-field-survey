@@ -1,4 +1,5 @@
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Capacitor } from '@capacitor/core';
 
 export interface PhotoResult {
   webPath?: string;
@@ -6,43 +7,38 @@ export interface PhotoResult {
   exif?: any;
 }
 
+export function isNativeCameraPlatform(): boolean {
+  return Capacitor.isNativePlatform();
+}
+
+const cameraOptions = (source: CameraSource) => ({
+  quality: 90,
+  allowEditing: false,
+  resultType: CameraResultType.Base64,
+  source,
+  promptLabelPhoto: 'Chọn từ thư viện',
+  promptLabelPicture: 'Chụp ảnh',
+  promptLabelCancel: 'Hủy',
+});
+
+function toPhotoResult(image: { base64String?: string; webPath?: string; exif?: any }): PhotoResult {
+  return { base64: image.base64String, webPath: image.webPath, exif: image.exif };
+}
+
+/** Opens the native Android/iOS camera through Capacitor, or the web camera fallback. */
 export async function takePhoto(): Promise<PhotoResult | null> {
   try {
-    const image = await Camera.getPhoto({
-      quality: 90,
-      allowEditing: false,
-      resultType: CameraResultType.Base64,
-      source: CameraSource.Camera,
-      promptLabelPhoto: 'Chọn từ thư viện',
-      promptLabelPicture: 'Chụp ảnh',
-      promptLabelCancel: 'Hủy',
-    });
-
-    return {
-      base64: image.base64String,
-      webPath: image.webPath,
-      exif: image.exif,
-    };
+    return toPhotoResult(await Camera.getPhoto(cameraOptions(CameraSource.Camera)));
   } catch (error) {
     console.error('Camera error:', error);
     return null;
   }
 }
 
+/** Opens the native Android/iOS photo library through Capacitor. */
 export async function pickPhoto(): Promise<PhotoResult | null> {
   try {
-    const image = await Camera.getPhoto({
-      quality: 90,
-      allowEditing: false,
-      resultType: CameraResultType.Base64,
-      source: CameraSource.Photos,
-    });
-
-    return {
-      base64: image.base64String,
-      webPath: image.webPath,
-      exif: image.exif,
-    };
+    return toPhotoResult(await Camera.getPhoto(cameraOptions(CameraSource.Photos)));
   } catch (error) {
     console.error('Photo picker error:', error);
     return null;
@@ -50,36 +46,26 @@ export async function pickPhoto(): Promise<PhotoResult | null> {
 }
 
 export function getWebPhotoDataUrl(base64: string | undefined): string {
-  if (!base64) return '';
-  return `data:image/jpeg;base64,${base64}`;
+  return base64 ? `data:image/jpeg;base64,${base64}` : '';
 }
 
-export async function fallbackFileInput(): Promise<string | null> {
+/** Web/PWA fallback. `camera` requests the rear-facing mobile camera when supported. */
+export function fallbackFileInput(source: 'camera' | 'library' = 'library'): Promise<string | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    (input as any).capture = 'environment';
-
-    input.onchange = async (e: Event) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) {
-        resolve(null);
-        return;
-      }
-
+    if (source === 'camera') input.setAttribute('capture', 'environment');
+    input.onchange = (event: Event) => {
+      const file = (event.target as HTMLInputElement).files?.[0];
+      if (!file) return resolve(null);
       const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result;
-        if (typeof result === 'string') {
-          resolve(result.split(',')[1]); // Remove data:image/...;base64, prefix
-        } else {
-          resolve(null);
-        }
+      reader.onload = () => {
+        const value = reader.result;
+        resolve(typeof value === 'string' ? value.split(',')[1] || null : null);
       };
       reader.readAsDataURL(file);
     };
-
     input.click();
   });
 }

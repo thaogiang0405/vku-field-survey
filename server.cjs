@@ -12,10 +12,24 @@ const path = require('path');
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'inspections.json');
+const ALLOWED_ORIGINS = new Set([
+  'https://vku-field-survey.phamthaogianghl05.workers.dev',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  ...(process.env.CORS_ORIGINS || '').split(',').map((origin) => origin.trim()).filter(Boolean),
+]);
 let inspections = [];
 let writeChain = Promise.resolve();
 
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    // Non-browser clients such as health checks do not send Origin.
+    if (!origin || ALLOWED_ORIGINS.has(origin)) return callback(null, true);
+    return callback(new Error('Origin không được phép gọi API.'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+}));
 app.use(express.json({ limit: '12mb' }));
 
 async function loadStore() {
