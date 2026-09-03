@@ -13,9 +13,9 @@ export async function takePhoto(): Promise<PhotoResult | null> {
       allowEditing: false,
       resultType: CameraResultType.Base64,
       source: CameraSource.Camera,
-      promptLabelPhoto: 'From photos',
-      promptLabelPicture: 'Take picture',
-      promptLabelCancel: 'Cancel',
+      promptLabelPhoto: 'Chọn từ thư viện',
+      promptLabelPicture: 'Chụp ảnh',
+      promptLabelCancel: 'Hủy',
     });
 
     return {

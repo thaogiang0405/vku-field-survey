@@ -21,13 +21,13 @@ export async function getCurrentLocation(): Promise<LocationData | null> {
 
 export function getLocationDisplayText(location: LocationData | undefined): string {
   if (!location) {
-    return 'Location not captured';
+    return 'Chưa ghi nhận vị trí';
   }
-  return `Latitude: ${location.latitude.toFixed(6)}, Longitude: ${location.longitude.toFixed(6)}`;
+  return `Vĩ độ: ${location.latitude.toFixed(6)}, Kinh độ: ${location.longitude.toFixed(6)}`;
 }
 
 export function parseLocationFromString(str: string): LocationData | null {
-  const match = str.match(/Latitude:\s*([-\d.]+),\s*Longitude:\s*([-\d.]+)/);
+  const match = str.match(/(?:Latitude|Vĩ độ):\s*([-\d.]+),\s*(?:Longitude|Kinh độ):\s*([-\d.]+)/);
   if (match) {
     return {
       latitude: parseFloat(match[1]),

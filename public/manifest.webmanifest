@@ -1,7 +1,7 @@
 {
-  "name": "VKU Field Survey",
-  "short_name": "VKU Survey",
-  "description": "Offline-first facility inspection and data collection application for VKU",
+  "name": "Khảo sát cơ sở vật chất VKU",
+  "short_name": "Khảo sát VKU",
+  "description": "Ứng dụng khảo sát và ghi nhận tình trạng cơ sở vật chất VKU",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

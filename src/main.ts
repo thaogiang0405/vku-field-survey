@@ -2,6 +2,7 @@ import './style.css';
 import { createInspectionForm } from './ui/form';
 import { createInspectionList } from './ui/inspection-list';
 import { createStatusIndicator } from './ui/status';
+import { createDashboard } from './ui/dashboard';
 import { initNetworkListener } from './services/network';
 import { onNetworkStatusChange, isNetworkConnected } from './services/network';
 import { syncPendingInspections, onSyncStatusChange } from './services/sync';
@@ -30,8 +31,9 @@ async function initApp(): Promise<void> {
     header.className = 'app-header';
     header.innerHTML = `
       <div class="header-content">
-        <h1>VKU Field Survey</h1>
-        <p class="subtitle">Offline Data Collection</p>
+        <div class="brand-mark" aria-hidden="true">⌂</div>
+        <div><h1>Khảo sát cơ sở vật chất VKU</h1>
+        <p class="subtitle">Ứng dụng kiểm tra và ghi nhận tình trạng cơ sở vật chất</p></div>
       </div>
     `;
 
@@ -46,8 +48,8 @@ async function initApp(): Promise<void> {
     await setupFormWithList(mainContainer);
 
     // Append to app
+    header.appendChild(statusIndicator);
     app.appendChild(header);
-    app.appendChild(statusIndicator);
     app.appendChild(mainContainer);
 
     // Setup network and sync listeners
@@ -67,18 +69,15 @@ async function initApp(): Promise<void> {
 }
 
 async function setupFormWithList(mainContainer: HTMLElement): Promise<HTMLElement> {
+  const dashboard = await createDashboard() as HTMLDivElement & { refresh: () => Promise<void> };
+  const listContainer = await createInspectionList() as HTMLDivElement & { refresh: () => Promise<void> };
   const formContainer = createInspectionForm(async () => {
-    // Refresh list when inspection is saved
-    const listEl = mainContainer.querySelector('.list-container') as any;
-    if (listEl && listEl.refresh) {
-      await listEl.refresh();
-    }
+    await listContainer.refresh();
+    await dashboard.refresh();
   });
 
+  mainContainer.appendChild(dashboard);
   mainContainer.appendChild(formContainer);
-
-  // Create and append inspection list
-  const listContainer = await createInspectionList();
   mainContainer.appendChild(listContainer);
 
   return formContainer;
@@ -99,6 +98,12 @@ function setupNetworkSync(): void {
   // Listen for sync status changes
   onSyncStatusChange((status) => {
     console.log('[SYNC STATUS]', status);
+    if (status === 'SYNCED' || status === 'ERROR') {
+      const dashboard = document.querySelector('.dashboard') as (HTMLDivElement & { refresh?: () => Promise<void> }) | null;
+      const list = document.querySelector('.list-container') as (HTMLDivElement & { refresh?: () => Promise<void> }) | null;
+      dashboard?.refresh?.();
+      list?.refresh?.();
+    }
   });
 }
 
@@ -107,8 +112,8 @@ function displayInitError(): void {
   if (app) {
     app.innerHTML = `
       <div style="padding: 40px 20px; text-align: center;">
-        <h1>⚠️ Application Error</h1>
-        <p>Failed to initialize the application. Please refresh the page or contact support.</p>
+        <h1>Không thể khởi động ứng dụng</h1>
+        <p>Vui lòng tải lại trang hoặc liên hệ bộ phận hỗ trợ.</p>
         <button onclick="location.reload()" style="
           padding: 10px 20px;
           background: #284c7c;
@@ -117,7 +122,7 @@ function displayInitError(): void {
           border-radius: 4px;
           cursor: pointer;
           font-size: 16px;
-        ">Refresh Page</button>
+        ">Tải lại trang</button>
       </div>
     `;
   }
