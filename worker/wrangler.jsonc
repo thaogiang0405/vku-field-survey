@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vku-field-survey-api",
+  "main": "index.js",
+  "compatibility_date": "2026-09-03",
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vku-field-survey-db",
+      "database_id": "6d197ff0-cc3c-4b4c-8169-25824fa5c757"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "worker",
+  "version": "1.0.0",
+  "description": "VKU Field Survey API on Cloudflare Workers and D1",
+  "main": "index.js",
+  "scripts": {
+    "check": "node --check index.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "^4.128.0"
+  }
+}
