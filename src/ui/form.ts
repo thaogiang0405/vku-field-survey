@@ -1,7 +1,7 @@
 import { Inspection, CategoryType, ConditionRating } from '../types/inspection';
 import { saveInspection, addToSyncQueue } from '../db/database';
 import { getCurrentLocation, getLocationDisplayText } from '../services/location';
-import { takePhoto, pickPhoto, getWebPhotoDataUrl, fallbackFileInput, isNativeCameraPlatform } from '../services/camera';
+import { takePhoto, pickPhoto, getWebPhotoDataUrl, isNativeCameraPlatform, openWebPhotoPicker } from '../services/camera';
 import { isNetworkConnected } from '../services/network';
 import { syncPendingInspections } from '../services/sync';
 
@@ -35,14 +35,19 @@ export function createInspectionForm(onInspectionSaved: () => void | Promise<voi
   const locationDisplay = container.querySelector('#locationDisplay') as HTMLDivElement;
   const updateRating = () => { ratingValue.textContent = ratingSlider.value; ratingDescription.textContent = ['Rất kém', 'Kém', 'Trung bình', 'Tốt', 'Rất tốt'][Number(ratingSlider.value) - 1]; };
   const renderPhoto = () => { if (!currentPhoto) { photoPreview.className = 'photo-preview empty-photo'; photoPreview.innerHTML = '<span class="photo-icon" aria-hidden="true">▣</span><strong>Chưa có ảnh hiện trạng</strong><small>Chụp mới hoặc chọn ảnh từ thư viện</small>'; return; } photoPreview.className = 'photo-preview'; photoPreview.innerHTML = `<img src="${getWebPhotoDataUrl(currentPhoto)}" alt="Ảnh hiện trạng khảo sát" class="photo-thumbnail"/><button type="button" class="btn-remove-photo" aria-label="Xóa ảnh">×</button>`; photoPreview.querySelector('.btn-remove-photo')?.addEventListener('click', () => { currentPhoto = undefined; renderPhoto(); }); };
-  const setPhoto = async (source: 'camera' | 'library') => {
-    const button = source === 'camera' ? takePhotoBtn : pickPhotoBtn; const label = source === 'camera' ? 'Đang mở máy ảnh…' : 'Đang mở thư viện…';
-    takePhotoBtn.disabled = true; pickPhotoBtn.disabled = true; button.textContent = label;
-    try { const result = source === 'camera' ? await takePhoto() : await pickPhoto(); const fallback = !result?.base64 && !isNativeCameraPlatform() ? await fallbackFileInput(source) : null; if (result?.base64 || fallback) { currentPhoto = result?.base64 || fallback || undefined; renderPhoto(); } }
-    catch (error) { console.error('Photo error:', error); showMessage(source === 'camera' ? 'Không thể chụp ảnh. Vui lòng thử lại.' : 'Không thể chọn ảnh. Vui lòng thử lại.', 'error'); }
+  const useSelectedPhoto = (base64: string) => { currentPhoto = base64; renderPhoto(); };
+  const setNativePhoto = async (source: 'camera' | 'library') => {
+    const button = source === 'camera' ? takePhotoBtn : pickPhotoBtn;
+    takePhotoBtn.disabled = true; pickPhotoBtn.disabled = true; button.textContent = source === 'camera' ? 'Đang mở máy ảnh…' : 'Đang mở thư viện…';
+    try { const result = source === 'camera' ? await takePhoto() : await pickPhoto(); if (result?.base64) useSelectedPhoto(result.base64); }
     finally { takePhotoBtn.disabled = false; pickPhotoBtn.disabled = false; takePhotoBtn.textContent = '📷 Chụp ảnh'; pickPhotoBtn.textContent = '🖼️ Chọn từ thư viện'; }
   };
-  ratingSlider.addEventListener('input', updateRating); takePhotoBtn.addEventListener('click', () => setPhoto('camera')); pickPhotoBtn.addEventListener('click', () => setPhoto('library'));
+  const handlePhotoAction = (source: 'camera' | 'library') => {
+    if (isNativeCameraPlatform()) { void setNativePhoto(source); return; }
+    // This call is intentionally synchronous within the user click event.
+    openWebPhotoPicker(source, useSelectedPhoto);
+  };
+  ratingSlider.addEventListener('input', updateRating); takePhotoBtn.addEventListener('click', () => handlePhotoAction('camera')); pickPhotoBtn.addEventListener('click', () => handlePhotoAction('library'));
   getLocationBtn.addEventListener('click', async () => { getLocationBtn.disabled = true; getLocationBtn.textContent = 'Đang lấy vị trí…'; try { const location = await getCurrentLocation(); if (location) { currentLocation = location; locationDisplay.textContent = getLocationDisplayText(location); locationDisplay.classList.add('location-captured'); } else showMessage('Không thể lấy vị trí. Vui lòng kiểm tra quyền truy cập.', 'warning'); } catch (error) { console.error('Location error:', error); showMessage('Không thể lấy vị trí.', 'error'); } finally { getLocationBtn.disabled = false; getLocationBtn.textContent = 'Lấy vị trí hiện tại'; } });
   syncBtn.addEventListener('click', async () => { syncBtn.disabled = true; syncBtn.textContent = 'Đang đồng bộ…'; try { await syncPendingInspections(); } catch (error) { console.error('Sync error:', error); showMessage('Đồng bộ thất bại.', 'error'); } finally { syncBtn.disabled = false; syncBtn.textContent = 'Đồng bộ ngay'; } });
   form.addEventListener('reset', () => setTimeout(() => { currentPhoto = undefined; currentLocation = undefined; renderPhoto(); locationDisplay.textContent = 'Chưa ghi nhận vị trí'; locationDisplay.classList.remove('location-captured'); updateRating(); }, 0));
