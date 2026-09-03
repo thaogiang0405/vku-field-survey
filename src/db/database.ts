@@ -107,6 +107,25 @@ export async function getAllInspections(): Promise<Inspection[]> {
   });
 }
 
+/**
+ * Merge the shared server copy into the local offline cache without overwriting
+ * a newer local change that still waits to be uploaded.
+ */
+export async function mergeServerInspections(serverInspections: Inspection[]): Promise<void> {
+  for (const serverInspection of serverInspections) {
+    const local = await getInspection(serverInspection.id);
+    const serverUpdatedAt = new Date(serverInspection.updatedAt).getTime();
+    const localUpdatedAt = local ? new Date(local.updatedAt).getTime() : 0;
+
+    if (!local || serverUpdatedAt >= localUpdatedAt) {
+      await saveInspection({ ...serverInspection, status: 'SYNCED' });
+      if (local?.status === 'PENDING_SYNC') {
+        await removeSyncQueueForInspection(serverInspection.id);
+      }
+    }
+  }
+}
+
 export async function getPendingInspections(): Promise<Inspection[]> {
   const database = await openDatabase();
   return new Promise((resolve, reject) => {
@@ -231,6 +250,21 @@ export async function removeFromSyncQueue(id: string): Promise<void> {
 
     request.onsuccess = () => {
       resolve();
+    };
+  });
+}
+
+export async function removeSyncQueueForInspection(inspectionId: string): Promise<void> {
+  const database = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([SYNC_QUEUE_STORE], 'readwrite');
+    const store = transaction.objectStore(SYNC_QUEUE_STORE);
+    const request = store.index('inspectionId').getAllKeys(inspectionId);
+    request.onerror = () => reject(new Error(`Failed to read sync queue: ${request.error}`));
+    request.onsuccess = () => {
+      request.result.forEach((id) => store.delete(id));
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(new Error(`Failed to remove sync queue: ${transaction.error}`));
     };
   });
 }

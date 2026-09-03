@@ -1,115 +1,41 @@
 import { Inspection } from '../types/inspection';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000/api';
+const configuredUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '');
+const API_BASE_URL = configuredUrl ? `${configuredUrl}/api` : '/api';
 
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
-}
+export interface ApiResponse<T> { success: boolean; data?: T; error?: string; message?: string; }
 
-export async function createInspection(
-  inspection: Inspection
-): Promise<ApiResponse<Inspection>> {
+async function request<T>(path: string, options: RequestInit): Promise<ApiResponse<T>> {
   try {
-    const response = await fetch(`${API_BASE_URL}/inspections`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(inspection),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        errorData.message || `HTTP ${response.status}: ${response.statusText}`
-      );
-    }
-
-    const data = await response.json();
-    return {
-      success: true,
-      data: data.data || data,
-    };
+    const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) return { success: false, error: body.error || body.message || `HTTP ${response.status}` };
+    return { success: true, data: body.data ?? body, message: body.message };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('API Error:', message);
-    return {
-      success: false,
-      error: message,
-    };
+    const message = error instanceof Error ? error.message : 'Không thể kết nối máy chủ';
+    console.error('API error:', message);
+    return { success: false, error: message };
   }
 }
 
-export async function getInspections(): Promise<ApiResponse<Inspection[]>> {
+// Compression affects only the network payload; the original remains in IndexedDB for offline access.
+async function prepareForUpload(inspection: Inspection): Promise<Inspection> {
+  if (!inspection.photo || inspection.photo.length < 1_800_000) return inspection;
   try {
-    const response = await fetch(`${API_BASE_URL}/inspections`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return {
-      success: true,
-      data: Array.isArray(data.data) ? data.data : data,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('API Error:', message);
-    return {
-      success: false,
-      error: message,
-    };
-  }
+    const image = await loadImage(`data:image/jpeg;base64,${inspection.photo}`);
+    const scale = Math.min(1, 1600 / Math.max(image.width, image.height));
+    const canvas = document.createElement('canvas'); canvas.width = Math.round(image.width * scale); canvas.height = Math.round(image.height * scale);
+    canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const compressed = canvas.toDataURL('image/jpeg', 0.76).split(',')[1];
+    return compressed ? { ...inspection, photo: compressed } : inspection;
+  } catch { return inspection; }
 }
 
-export async function updateInspection(
-  id: string,
-  inspection: Partial<Inspection>
-): Promise<ApiResponse<Inspection>> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/inspections/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(inspection),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return {
-      success: true,
-      data: data.data || data,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('API Error:', message);
-    return {
-      success: false,
-      error: message,
-    };
-  }
+function loadImage(source: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = source; });
 }
 
-export async function healthCheck(): Promise<boolean> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/health`, {
-      method: 'GET',
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
+export async function createInspection(inspection: Inspection): Promise<ApiResponse<Inspection>> { return request<Inspection>('/inspections', { method: 'POST', body: JSON.stringify(await prepareForUpload(inspection)) }); }
+export function getInspections(): Promise<ApiResponse<Inspection[]>> { return request<Inspection[]>('/inspections', { method: 'GET' }); }
+export function updateInspection(id: string, inspection: Partial<Inspection>): Promise<ApiResponse<Inspection>> { return request<Inspection>(`/inspections/${id}`, { method: 'PUT', body: JSON.stringify(inspection) }); }
+export async function healthCheck(): Promise<boolean> { return (await request<unknown>('/health', { method: 'GET' })).success; }

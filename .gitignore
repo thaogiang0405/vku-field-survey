@@ -11,6 +11,10 @@ build/
 .env.local
 .env.*.local
 
+# Durable local API data (configure DATA_FILE to a persistent volume in production)
+data/
+.wrangler/
+
 # IDE
 .vscode/
 .idea/

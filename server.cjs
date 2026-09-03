@@ -1,243 +1,122 @@
 /**
- * VKU Field Survey - Demo Backend API Server
- * Simple Express.js backend for local development and testing
- * 
- * Usage:
- *   node server.js
- * 
- * API runs at: http://localhost:3000/api
- * 
- * No external database needed - uses in-memory storage
- * Perfect for development and demonstrations
+ * VKU Field Survey API
+ * Durable shared store for local development and deployments with persistent disk.
+ * Set DATA_FILE to a mounted persistent path in production.
  */
-
 const express = require('express');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs/promises');
+const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// In-memory storage
+const PORT = Number(process.env.PORT || 3000);
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'inspections.json');
 let inspections = [];
+let writeChain = Promise.resolve();
 
-// ==================== API ROUTES ====================
+app.use(cors());
+app.use(express.json({ limit: '12mb' }));
 
-// Health check
+async function loadStore() {
+  await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
+  try {
+    const file = await fs.readFile(DATA_FILE, 'utf8');
+    const parsed = JSON.parse(file);
+    inspections = Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    await persistStore();
+  }
+}
+
+function persistStore() {
+  writeChain = writeChain.then(async () => {
+    const temporaryFile = `${DATA_FILE}.tmp`;
+    await fs.writeFile(temporaryFile, JSON.stringify(inspections, null, 2), 'utf8');
+    await fs.rename(temporaryFile, DATA_FILE);
+  });
+  return writeChain;
+}
+
+function isNewer(candidate, current) {
+  return new Date(candidate.updatedAt || candidate.updated_at || 0).getTime() > new Date(current.updatedAt || current.updated_at || 0).getTime();
+}
+
+function normalizeInspection(input, existing) {
+  const now = new Date().toISOString();
+  return {
+    ...existing,
+    ...input,
+    id: existing?.id || input.id || uuidv4(),
+    createdAt: existing?.createdAt || input.createdAt || now,
+    updatedAt: now,
+    status: 'SYNCED',
+    syncAttempts: existing?.syncAttempts || input.syncAttempts || 0,
+  };
+}
+
+function validInspection(inspection) {
+  return inspection && inspection.building && inspection.room && inspection.category;
+}
+
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    inspections: inspections.length,
-  });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), inspections: inspections.length, storage: 'persistent-file' });
 });
 
-// Create inspection
-app.post('/api/inspections', (req, res) => {
+// Idempotent create/upsert: retrying an offline queue item cannot create duplicates.
+app.post('/api/inspections', async (req, res, next) => {
   try {
-    const inspection = req.body;
+    if (!validInspection(req.body)) return res.status(400).json({ success: false, error: 'Thiếu các trường bắt buộc: building, room, category.' });
+    const id = req.body.id || uuidv4();
+    const index = inspections.findIndex((item) => item.id === id);
+    const existing = index === -1 ? undefined : inspections[index];
 
-    // Validate required fields
-    if (!inspection.building || !inspection.room || !inspection.category) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: building, room, category',
-      });
+    // Keep the latest version if the client retries an older payload.
+    if (existing && !isNewer(req.body, existing)) {
+      return res.status(200).json({ success: true, data: existing, message: 'Phiếu khảo sát đã tồn tại.' });
     }
 
-    // Add server-side data
-    if (!inspection.id) {
-      inspection.id = uuidv4();
-    }
-    inspection.createdAt = inspection.createdAt || new Date().toISOString();
-    inspection.updatedAt = new Date().toISOString();
-    inspection.status = 'SYNCED';
-
-    // Store
-    inspections.push(inspection);
-
-    console.log(`[API] ✅ Created inspection: ${inspection.building} - ${inspection.room}`);
-    console.log(`[API] 📊 Total inspections: ${inspections.length}`);
-
-    // Return success
-    res.status(201).json({
-      success: true,
-      data: inspection,
-      message: 'Inspection created successfully',
-    });
-  } catch (error) {
-    console.error('[API] ❌ Error creating inspection:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
+    const inspection = normalizeInspection({ ...req.body, id }, existing);
+    if (index === -1) inspections.push(inspection); else inspections[index] = inspection;
+    await persistStore();
+    res.status(index === -1 ? 201 : 200).json({ success: true, data: inspection, message: index === -1 ? 'Đã tạo phiếu khảo sát.' : 'Đã cập nhật phiếu khảo sát.' });
+  } catch (error) { next(error); }
 });
 
-// Get all inspections
 app.get('/api/inspections', (req, res) => {
-  try {
-    // Sort by timestamp descending
-    const sorted = [...inspections].sort((a, b) =>
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-
-    console.log(`[API] 📖 Retrieved ${sorted.length} inspections`);
-
-    res.json({
-      success: true,
-      data: sorted,
-      count: sorted.length,
-    });
-  } catch (error) {
-    console.error('[API] ❌ Error getting inspections:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
+  const sorted = [...inspections].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  res.json({ success: true, data: sorted, count: sorted.length });
 });
 
-// Get single inspection
 app.get('/api/inspections/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const inspection = inspections.find((i) => i.id === id);
-
-    if (!inspection) {
-      return res.status(404).json({
-        success: false,
-        error: `Inspection ${id} not found`,
-      });
-    }
-
-    res.json({
-      success: true,
-      data: inspection,
-    });
-  } catch (error) {
-    console.error('[API] ❌ Error getting inspection:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
+  const inspection = inspections.find((item) => item.id === req.params.id);
+  if (!inspection) return res.status(404).json({ success: false, error: 'Không tìm thấy phiếu khảo sát.' });
+  return res.json({ success: true, data: inspection });
 });
 
-// Update inspection
-app.put('/api/inspections/:id', (req, res) => {
+app.put('/api/inspections/:id', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const updates = req.body;
-
-    const index = inspections.findIndex((i) => i.id === id);
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        error: `Inspection ${id} not found`,
-      });
-    }
-
-    inspections[index] = {
-      ...inspections[index],
-      ...updates,
-      id, // Don't allow ID change
-      updatedAt: new Date().toISOString(),
-    };
-
-    console.log(`[API] ✏️  Updated inspection: ${id}`);
-
-    res.json({
-      success: true,
-      data: inspections[index],
-    });
-  } catch (error) {
-    console.error('[API] ❌ Error updating inspection:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
+    const index = inspections.findIndex((item) => item.id === req.params.id);
+    if (index === -1) return res.status(404).json({ success: false, error: 'Không tìm thấy phiếu khảo sát.' });
+    if (!isNewer(req.body, inspections[index])) return res.status(200).json({ success: true, data: inspections[index], message: 'Máy chủ đã có phiên bản mới hơn.' });
+    inspections[index] = normalizeInspection({ ...req.body, id: req.params.id }, inspections[index]);
+    await persistStore();
+    return res.json({ success: true, data: inspections[index] });
+  } catch (error) { return next(error); }
 });
 
-// Delete inspection
-app.delete('/api/inspections/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const index = inspections.findIndex((i) => i.id === id);
-
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        error: `Inspection ${id} not found`,
-      });
-    }
-
-    const deleted = inspections.splice(index, 1)[0];
-    console.log(`[API] 🗑️  Deleted inspection: ${id}`);
-
-    res.json({
-      success: true,
-      data: deleted,
-    });
-  } catch (error) {
-    console.error('[API] ❌ Error deleting inspection:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
+app.use((error, req, res, next) => {
+  if (error.type === 'entity.too.large') return res.status(413).json({ success: false, error: 'Ảnh hoặc dữ liệu gửi lên quá lớn.' });
+  console.error('[API] Lỗi máy chủ:', error);
+  return res.status(500).json({ success: false, error: 'Không thể lưu dữ liệu trên máy chủ.' });
 });
 
-// Clear all (for testing)
-app.delete('/api/inspections', (req, res) => {
-  try {
-    const count = inspections.length;
-    inspections = [];
-    console.log(`[API] 🧹 Cleared all ${count} inspections`);
+app.use((req, res) => res.status(404).json({ success: false, error: `Không tìm thấy API: ${req.method} ${req.path}` }));
 
-    res.json({
-      success: true,
-      message: `Cleared ${count} inspections`,
-    });
-  } catch (error) {
-    console.error('[API] ❌ Error clearing:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: `Not found: ${req.method} ${req.path}`,
+loadStore().then(() => {
+  app.listen(PORT, () => {
+    console.log(`VKU Field Survey API đang chạy tại http://localhost:${PORT}/api`);
+    console.log(`Kho dữ liệu dùng chung: ${DATA_FILE}`);
   });
-});
-
-// ==================== START SERVER ====================
-
-app.listen(PORT, () => {
-  console.log('\n╔════════════════════════════════════════════════════╗');
-  console.log('║  VKU Field Survey - Backend API Server             ║');
-  console.log('╚════════════════════════════════════════════════════╝\n');
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-  console.log(`📍 API endpoint: http://localhost:${PORT}/api`);
-  console.log(`❤️  Health check: http://localhost:${PORT}/api/health\n`);
-  console.log('Available Endpoints:');
-  console.log('  POST   /api/inspections          - Create inspection');
-  console.log('  GET    /api/inspections          - Get all inspections');
-  console.log('  GET    /api/inspections/:id      - Get single inspection');
-  console.log('  PUT    /api/inspections/:id      - Update inspection');
-  console.log('  DELETE /api/inspections/:id      - Delete inspection');
-  console.log('  DELETE /api/inspections          - Clear all (testing)');
-  console.log('  GET    /api/health               - Health check\n');
-  console.log('Testing:');
-  console.log('  curl http://localhost:3000/api/health\n');
-});
+}).catch((error) => { console.error('Không thể khởi động kho dữ liệu:', error); process.exit(1); });
