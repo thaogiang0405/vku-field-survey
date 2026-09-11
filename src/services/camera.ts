@@ -32,9 +32,15 @@ function toPhotoResult(image: { base64String?: string; webPath?: string; exif?: 
 /** Opens the native Android/iOS camera through Capacitor. */
 export async function takePhoto(): Promise<PhotoResult | null> {
   try {
+    if (Capacitor.isNativePlatform()) {
+      let perm = await Camera.checkPermissions();
+      if (perm.camera !== 'granted') perm = await Camera.requestPermissions({ permissions: ['camera'] });
+      if (perm.camera !== 'granted') throw new Error('Quyền camera bị từ chối.');
+    }
     return toPhotoResult(await Camera.getPhoto(cameraOptions(CameraSource.Camera)));
   } catch (error) {
     if (!wasCancelled(error)) console.error('Camera error:', error);
+    if (error instanceof Error && error.message.includes('từ chối')) alert(error.message);
     return null;
   }
 }
@@ -42,9 +48,15 @@ export async function takePhoto(): Promise<PhotoResult | null> {
 /** Opens the native Android/iOS photo library through Capacitor. */
 export async function pickPhoto(): Promise<PhotoResult | null> {
   try {
+    if (Capacitor.isNativePlatform()) {
+      let perm = await Camera.checkPermissions();
+      if (perm.photos !== 'granted') perm = await Camera.requestPermissions({ permissions: ['photos'] });
+      if (perm.photos !== 'granted') throw new Error('Quyền thư viện ảnh bị từ chối.');
+    }
     return toPhotoResult(await Camera.getPhoto(cameraOptions(CameraSource.Photos)));
   } catch (error) {
     if (!wasCancelled(error)) console.error('Photo picker error:', error);
+    if (error instanceof Error && error.message.includes('từ chối')) alert(error.message);
     return null;
   }
 }

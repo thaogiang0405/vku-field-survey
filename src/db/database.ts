@@ -55,15 +55,9 @@ export async function saveInspection(inspection: Inspection): Promise<string> {
   return new Promise((resolve, reject) => {
     const transaction = database.transaction([INSPECTIONS_STORE], 'readwrite');
     const store = transaction.objectStore(INSPECTIONS_STORE);
-    const request = store.put(inspection);
-
-    request.onerror = () => {
-      reject(new Error(`Failed to save inspection: ${request.error}`));
-    };
-
-    request.onsuccess = () => {
-      resolve(inspection.id);
-    };
+    store.put(inspection);
+    transaction.onerror = () => reject(new Error(`Failed to save inspection: ${transaction.error}`));
+    transaction.oncomplete = () => resolve(inspection.id);
   });
 }
 
@@ -181,8 +175,8 @@ export async function updateInspectionStatus(
       updateRequest.onerror = () => {
         reject(new Error(`Failed to update inspection: ${updateRequest.error}`));
       };
-
-      updateRequest.onsuccess = () => {
+      
+      transaction.oncomplete = () => {
         resolve();
       };
     };
@@ -202,15 +196,10 @@ export async function addToSyncQueue(inspection: Inspection): Promise<string> {
 
     const transaction = database.transaction([SYNC_QUEUE_STORE], 'readwrite');
     const store = transaction.objectStore(SYNC_QUEUE_STORE);
-    const request = store.add(queueItem);
-
-    request.onerror = () => {
-      reject(new Error(`Failed to add to sync queue: ${request.error}`));
-    };
-
-    request.onsuccess = () => {
-      resolve(queueItem.id);
-    };
+    store.add(queueItem);
+    
+    transaction.onerror = () => reject(new Error(`Failed to add to sync queue: ${transaction.error}`));
+    transaction.oncomplete = () => resolve(queueItem.id);
   });
 }
 
@@ -242,13 +231,13 @@ export async function removeFromSyncQueue(id: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const transaction = database.transaction([SYNC_QUEUE_STORE], 'readwrite');
     const store = transaction.objectStore(SYNC_QUEUE_STORE);
-    const request = store.delete(id);
+    store.delete(id);
 
-    request.onerror = () => {
-      reject(new Error(`Failed to remove from sync queue: ${request.error}`));
+    transaction.onerror = () => {
+      reject(new Error(`Failed to remove from sync queue: ${transaction.error}`));
     };
 
-    request.onsuccess = () => {
+    transaction.oncomplete = () => {
       resolve();
     };
   });

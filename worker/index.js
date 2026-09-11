@@ -2,6 +2,9 @@ const ALLOWED_ORIGINS = new Set([
   'https://vku-field-survey.phamthaogianghl05.workers.dev',
   'http://localhost:5173',
   'http://localhost:5174',
+  'https://localhost',
+  'capacitor://localhost',
+  'http://localhost'
 ]);
 
 const MAX_BODY_BYTES = 12 * 1024 * 1024;

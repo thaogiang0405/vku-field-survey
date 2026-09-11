@@ -1,8 +1,19 @@
 import { Geolocation } from '@capacitor/geolocation';
+import { Capacitor } from '@capacitor/core';
 import { LocationData } from '../types/inspection';
 
 export async function getCurrentLocation(): Promise<LocationData | null> {
   try {
+    if (Capacitor.isNativePlatform()) {
+      let permStatus = await Geolocation.checkPermissions();
+      if (permStatus.location !== 'granted') {
+        permStatus = await Geolocation.requestPermissions();
+      }
+      if (permStatus.location !== 'granted') {
+        throw new Error('Quyền truy cập vị trí bị từ chối. Vui lòng cấp quyền trong Cài đặt.');
+      }
+    }
+
     const coordinates = await Geolocation.getCurrentPosition({
       enableHighAccuracy: true,
       timeout: 10000,
@@ -15,6 +26,12 @@ export async function getCurrentLocation(): Promise<LocationData | null> {
     };
   } catch (error) {
     console.error('Geolocation error:', error);
+    if (error instanceof Error && error.message) {
+      if (error.message.includes('Location services are not enabled')) {
+        throw new Error('Vui lòng bật Vị trí/GPS trên điện thoại rồi thử lại.');
+      }
+      throw error;
+    }
     return null;
   }
 }

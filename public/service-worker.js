@@ -136,3 +136,82 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// --- Background Sync ---
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-inspections') {
+    event.waitUntil(processSyncQueue());
+  }
+});
+
+async function processSyncQueue() {
+  console.log('[SW] Background Sync started: sync-inspections');
+  const API_BASE_URL = 'https://vku-field-survey-api.phamthaogianghl05.workers.dev';
+  
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('vku-field-survey', 1);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+
+    // Get pending inspections
+    const pending = await new Promise((resolve, reject) => {
+      const tx = db.transaction(['inspections'], 'readonly');
+      const store = tx.objectStore('inspections');
+      const index = store.index('status');
+      const req = index.getAll('PENDING_SYNC');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (!pending.length) {
+      console.log('[SW] No pending inspections');
+      return;
+    }
+
+    // Process sequentially
+    for (const inspection of pending) {
+      try {
+        const payload = { ...inspection };
+        // We do not compress in SW, just send directly
+        const response = await fetch(`${API_BASE_URL}/api/inspections`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const body = await response.json().catch(() => ({}));
+        
+        if (response.ok && (body.success || body.data)) {
+          // Update status to SYNCED
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(['inspections', 'syncQueue'], 'readwrite');
+            const store = tx.objectStore('inspections');
+            inspection.status = 'SYNCED';
+            inspection.updatedAt = new Date().toISOString();
+            store.put(inspection);
+            
+            // Remove from syncQueue
+            const queueStore = tx.objectStore('syncQueue');
+            const idx = queueStore.index('inspectionId');
+            const req = idx.getAllKeys(inspection.id);
+            req.onsuccess = () => {
+              req.result.forEach(id => queueStore.delete(id));
+            };
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+          });
+        } else {
+          console.error('[SW] Sync failed for', inspection.id, body);
+        }
+      } catch (err) {
+        console.error('[SW] Network error syncing', inspection.id, err);
+        throw err; // throw to let SyncManager retry later
+      }
+    }
+  } catch (err) {
+    console.error('[SW] processSyncQueue error:', err);
+    throw err;
+  }
+}
