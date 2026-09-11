@@ -22,7 +22,7 @@ export function createInspectionForm(onInspectionSaved: () => void | Promise<voi
     <fieldset class="form-section"><legend>★ Đánh giá tình trạng</legend><div class="rating-container"><div class="rating-display"><span id="ratingValue">3</span><span>/5</span><strong id="ratingDescription">Trung bình</strong></div><input id="rating" name="rating" type="range" min="1" max="5" value="3" class="rating-slider" aria-label="Đánh giá tình trạng"/><div class="rating-labels" aria-hidden="true"><span>1<br><small>Rất kém</small></span><span>2<br><small>Kém</small></span><span>3<br><small>Trung bình</small></span><span>4<br><small>Tốt</small></span><span>5<br><small>Rất tốt</small></span></div></div></fieldset>
     <fieldset class="form-section"><legend>✎ Mô tả sự cố</legend><div class="form-group"><label for="defectNotes">Ghi chú tình trạng <span class="optional">(không bắt buộc)</span></label><textarea id="defectNotes" name="defectNotes" rows="4" placeholder="Nhập mô tả tình trạng hoặc sự cố phát hiện được..."></textarea></div></fieldset>
     <fieldset class="form-section"><legend>◈ Hình ảnh và vị trí</legend><div class="form-group"><label>Ảnh hiện trạng</label><div id="photoPreview" class="photo-preview empty-photo"><span class="photo-icon" aria-hidden="true">▣</span><strong>Chưa có ảnh hiện trạng</strong><small>Chụp mới hoặc chọn ảnh từ thư viện</small></div><div class="photo-actions"><button type="button" id="takePhotoBtn" class="btn-secondary photo-action">📷 Chụp ảnh</button><button type="button" id="pickPhotoBtn" class="btn-secondary photo-action">🖼️ Chọn từ thư viện</button></div></div><div class="form-group"><label>Vị trí GPS</label><div id="locationDisplay" class="location-display">Chưa ghi nhận vị trí</div><button type="button" id="getLocationBtn" class="btn-tertiary">Lấy vị trí hiện tại</button></div></fieldset>
-    <div class="form-actions"><button type="submit" class="btn-primary">Lưu phiếu khảo sát</button><button type="button" id="syncBtn" class="btn-secondary">Đồng bộ ngay</button><button type="reset" class="btn-tertiary">Xóa nội dung</button></div></form></div>`;
+    <div class="form-actions"><button type="submit" class="btn-primary">💾 Lưu & đồng bộ</button><button type="reset" class="btn-tertiary">Xóa nội dung</button></div></form></div>`;
   const form = container.querySelector('#inspectionForm') as HTMLFormElement;
   const ratingSlider = form.querySelector('#rating') as HTMLInputElement;
   const ratingValue = container.querySelector('#ratingValue') as HTMLElement;
@@ -30,7 +30,6 @@ export function createInspectionForm(onInspectionSaved: () => void | Promise<voi
   const takePhotoBtn = form.querySelector('#takePhotoBtn') as HTMLButtonElement;
   const pickPhotoBtn = form.querySelector('#pickPhotoBtn') as HTMLButtonElement;
   const getLocationBtn = form.querySelector('#getLocationBtn') as HTMLButtonElement;
-  const syncBtn = form.querySelector('#syncBtn') as HTMLButtonElement;
   const photoPreview = container.querySelector('#photoPreview') as HTMLDivElement;
   const locationDisplay = container.querySelector('#locationDisplay') as HTMLDivElement;
   const updateRating = () => { ratingValue.textContent = ratingSlider.value; ratingDescription.textContent = ['Rất kém', 'Kém', 'Trung bình', 'Tốt', 'Rất tốt'][Number(ratingSlider.value) - 1]; };
@@ -48,11 +47,85 @@ export function createInspectionForm(onInspectionSaved: () => void | Promise<voi
     openWebPhotoPicker(source, useSelectedPhoto);
   };
   ratingSlider.addEventListener('input', updateRating); takePhotoBtn.addEventListener('click', () => handlePhotoAction('camera')); pickPhotoBtn.addEventListener('click', () => handlePhotoAction('library'));
-  getLocationBtn.addEventListener('click', async () => { getLocationBtn.disabled = true; getLocationBtn.textContent = 'Đang lấy vị trí…'; try { const location = await getCurrentLocation(); if (location) { currentLocation = location; locationDisplay.textContent = getLocationDisplayText(location); locationDisplay.classList.add('location-captured'); } else showMessage('Không thể lấy vị trí. Vui lòng kiểm tra quyền truy cập.', 'warning'); } catch (error) { console.error('Location error:', error); showMessage('Không thể lấy vị trí.', 'error'); } finally { getLocationBtn.disabled = false; getLocationBtn.textContent = 'Lấy vị trí hiện tại'; } });
-  syncBtn.addEventListener('click', async () => { syncBtn.disabled = true; syncBtn.textContent = 'Đang đồng bộ…'; try { await syncPendingInspections(); } catch (error) { console.error('Sync error:', error); showMessage('Đồng bộ thất bại.', 'error'); } finally { syncBtn.disabled = false; syncBtn.textContent = 'Đồng bộ ngay'; } });
+  getLocationBtn.addEventListener('click', async () => { getLocationBtn.disabled = true; getLocationBtn.textContent = 'Đang lấy vị trí…'; try { const location = await getCurrentLocation(); if (location) { currentLocation = location; locationDisplay.textContent = getLocationDisplayText(location); locationDisplay.classList.add('location-captured'); } else showMessage('Không thể lấy vị trí. Vui lòng kiểm tra quyền truy cập.', 'warning'); } catch (error) { console.error('Location error:', error); const errorMsg = error instanceof Error && error.message ? error.message : 'Không thể lấy vị trí.'; showMessage(errorMsg, 'error'); } finally { getLocationBtn.disabled = false; getLocationBtn.textContent = 'Lấy vị trí hiện tại'; } });
+  
   form.addEventListener('reset', () => setTimeout(() => { currentPhoto = undefined; currentLocation = undefined; renderPhoto(); locationDisplay.textContent = 'Chưa ghi nhận vị trí'; locationDisplay.classList.remove('location-captured'); updateRating(); }, 0));
-  form.addEventListener('submit', async (event) => { event.preventDefault(); if (!validateForm(form, container)) return; const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement; submitBtn.disabled = true; submitBtn.textContent = 'Đang lưu…'; try { const values = new FormData(form); const inspection: Inspection = { id: crypto.randomUUID(), building: values.get('building') as string, floor: parseInt(values.get('floor') as string), room: values.get('room') as string, category: values.get('category') as CategoryType, rating: parseInt(values.get('rating') as string) as ConditionRating, defectNotes: values.get('defectNotes') as string, photo: currentPhoto, latitude: currentLocation?.latitude, longitude: currentLocation?.longitude, timestamp: new Date().toISOString(), status: 'PENDING_SYNC', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), syncAttempts: 0 }; await saveInspection(inspection); await addToSyncQueue(inspection); if (isNetworkConnected()) { showMessage('Đã lưu phiếu, đang đồng bộ dữ liệu…', 'success'); await syncPendingInspections(); } else showMessage('Đã lưu trên thiết bị. Phiếu sẽ tự động đồng bộ khi có kết nối mạng.', 'info'); form.reset(); await onInspectionSaved(); } catch (error) { console.error('Save error:', error); showMessage('Không thể lưu phiếu khảo sát. Vui lòng thử lại.', 'error'); } finally { submitBtn.disabled = false; submitBtn.textContent = isNetworkConnected() ? 'Lưu phiếu khảo sát' : 'Lưu trên thiết bị'; } });
+  
+  const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`TIMEOUT: ${label} took more than ${ms}ms`)), ms);
+      promise.then(resolve).catch(reject).finally(() => clearTimeout(timer));
+    });
+  };
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!validateForm(form, container)) return;
+    
+    const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Đang lưu…';
+    
+    try {
+      // Fallback for crypto.randomUUID on older Android WebViews
+      const uuid = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+        ? crypto.randomUUID() 
+        : Date.now().toString(36) + Math.random().toString(36).substring(2);
+        
+      const values = new FormData(form);
+      const inspection: Inspection = {
+        id: uuid,
+        building: values.get('building') as string,
+        floor: parseInt(values.get('floor') as string),
+        room: values.get('room') as string,
+        category: values.get('category') as CategoryType,
+        rating: parseInt(values.get('rating') as string) as ConditionRating,
+        defectNotes: values.get('defectNotes') as string,
+        photo: currentPhoto,
+        latitude: currentLocation?.latitude,
+        longitude: currentLocation?.longitude,
+        timestamp: new Date().toISOString(),
+        status: 'PENDING_SYNC',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        syncAttempts: 0
+      };
+
+      // Bước 3, 4: Lưu local with timeout
+      await withTimeout(saveInspection(inspection), 5000, 'saveInspection');
+      await withTimeout(addToSyncQueue(inspection), 5000, 'addToSyncQueue');
+
+      // Bỏ qua Service Worker hoàn toàn trong luồng Save để tránh lỗi treo WebView IPC trên Capacitor.
+
+
+      // Bước 5: Gọi syncPendingInspections nếu ONLINE with timeout
+      if (isNetworkConnected()) {
+        const syncResult = await withTimeout(syncPendingInspections(), 15000, 'syncPendingInspections');
+        
+        // Bước 6 & Bước 8
+        if (syncResult && syncResult.success) {
+          showMessage('✅ Đã lưu và đồng bộ thành công.', 'success');
+        } else {
+          showMessage('✅ Đã lưu phiếu khảo sát. Chưa đồng bộ được, dữ liệu vẫn được lưu trên thiết bị.', 'warning');
+        }
+      } else {
+        // Bước 7
+        showMessage('✅ Đã lưu phiếu khảo sát trên thiết bị. Sẽ tự động đồng bộ khi có mạng.', 'info');
+      }
+      
+      form.reset();
+      void Promise.resolve(onInspectionSaved()).catch((error) => {
+        console.error('onInspectionSaved error:', error);
+      });
+    } catch (error: any) {
+      console.error('Save error:', error);
+      showMessage(`❌ Lỗi: ${error.message || 'Không thể lưu phiếu khảo sát.'}`, 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '💾 Lưu & đồng bộ';
+    }
+  });
   return container;
 }
 function validateForm(form: HTMLFormElement, container: HTMLElement): boolean { container.querySelectorAll('.error-message').forEach((message) => ((message as HTMLElement).textContent = '')); let valid = true; const checks: [string, string, boolean][] = [['building', 'Vui lòng chọn tòa nhà.', !!(form.elements.namedItem('building') as HTMLSelectElement).value], ['floor', 'Vui lòng nhập số tầng hợp lệ.', !!(form.elements.namedItem('floor') as HTMLInputElement).value], ['room', 'Vui lòng nhập số phòng.', !!(form.elements.namedItem('room') as HTMLInputElement).value.trim()], ['category', 'Vui lòng chọn hạng mục.', !!(form.elements.namedItem('category') as HTMLSelectElement).value]]; checks.forEach(([name, message, passed]) => { if (!passed) { const field = form.elements.namedItem(name) as HTMLElement; const error = field.parentElement?.querySelector('.error-message') as HTMLElement; if (error) error.textContent = message; valid = false; } }); return valid; }
-function showMessage(message: string, type: 'success' | 'error' | 'info' | 'warning'): void { const element = document.createElement('div'); element.className = `message message-${type}`; element.setAttribute('role', 'status'); element.textContent = message; document.body.appendChild(element); setTimeout(() => element.remove(), 4500); }
+function showMessage(message: string, type: 'success' | 'error' | 'info' | 'warning'): void { const element = document.createElement('div'); element.className = `message message-${type}`; element.setAttribute('role', 'status'); element.innerHTML = message.replace(/\n/g, '<br/>'); document.body.appendChild(element); setTimeout(() => element.remove(), 4500); }
